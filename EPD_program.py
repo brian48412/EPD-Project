@@ -1,96 +1,101 @@
-# ============================================================
-#  CONFIG  –  change everything here
-# ============================================================
+"""Windows Excel automation for EPD export/import/trade/volume updates."""
+
+import glob
 import os
+import re
 from datetime import datetime
+
+import pythoncom
+import win32com.client as win32
 from dateutil.relativedelta import relativedelta
+
+# ============================================================
+# CONFIG – change everything here
+# ============================================================
 
 BASE_DIR = r"C:\Users\khchu1\Desktop\Brian2\EPD_testing_delete"
 
-# ------------------------------------------------------------
-# 1. EXPORT
-# ------------------------------------------------------------
+# --- 1. EXPORT ---
 EXPORT = {
-    "source_file"   : "ExportsT.xlsx",
-    "dest_pattern"  : r"^Exports of recyclables by destination\((\d{6})\)\.xlsx$",
+    "source_file": "ExportsT.xlsx",
+    "dest_pattern": r"^Exports of recyclables by destination\((\d{6})\)\.xlsx$",
     "sheets": {
         # main DX sheet
         "DX by destination": {
-            "src_sheet"     : "DX - Result",
-            "month_col"     : "D5:D93",          # dynamic column (Row 4 logic)
-            "ytd_range"     : "E5:F93",          # fixed → CM5
-            "ytd_dest"      : "CM5",
-            "title_template": "Table 10  Trade volume (Thousand tonnes) of domestic exports of selected recyclables by destination, 2016 to {month_year}",
+            "src_sheet": "DX - Result",
+            "month_col": "D5:D93",          # dynamic column (Row 4 logic)
+            "ytd_range": "E5:F93",          # fixed → CM5
+            "ytd_dest": "CM5",
+            "title_template": (
+                "Table 10  Trade volume (Thousand tonnes) of domestic exports "
+                "of selected recyclables by destination, 2016 to {month_year}"
+            ),
         },
         # RX / TX sheets (same structure)
         "RX by destination": {
-            "src_sheet" : "RX - Result",
-            "month_col" : "D5:D93",
-            "ytd_range" : "E5:F93",
-            "ytd_dest"  : "CM5",
+            "src_sheet": "RX - Result",
+            "month_col": "D5:D93",
+            "ytd_range": "E5:F93",
+            "ytd_dest": "CM5",
         },
-        "DXRX by destination ": {   # ← add the trailing space to fit the file formating stored in the drive
-            "src_sheet" : "TX - Result",
-            "month_col" : "D5:D93",
-            "ytd_range" : "E5:F93",
-            "ytd_dest"  : "CM5",
+        # Trailing space in sheet name matches the destination workbook.
+        "DXRX by destination ": {
+            "src_sheet": "TX - Result",
+            "month_col": "D5:D93",
+            "ytd_range": "E5:F93",
+            "ytd_dest": "CM5",
         },
     },
     # Top-10 special sheet
     "top10": {
-        "src_sheet"       : "TX - top10",
-        "src_range"       : "A3:C62",
+        "src_sheet": "TX - top10",
+        "src_range": "A3:C62",
         "dest_name_pattern": r"DXRX - .* \(top 10\)",   # will be renamed
-        "paste_start"     : "B5",
+        "paste_start": "B5",
     },
 }
 
-# ------------------------------------------------------------
-# 2. IMPORT
-# ------------------------------------------------------------
+# --- 2. IMPORT ---
 IMPORT = {
-    "source_file"  : "ImportsT.xlsx",
-    "dest_pattern" : "Imports of recyclables by country(*).xlsx",
+    "source_file": "ImportsT.xlsx",
+    "dest_pattern": "Imports of recyclables by country(*).xlsx",
     "sheets": [
         {
-            "src"          : "CC - Result",
-            "dest"         : "IM by CC",
-            "month_range"  : "D5:D123",
-            "ytd_range"    : "E5:F123",
-            "ytd_dest"     : "CM5:CN123",
-            "a1_replace"   : True,          # replace month abbr in A1
+            "src": "CC - Result",
+            "dest": "IM by CC",
+            "month_range": "D5:D123",
+            "ytd_range": "E5:F123",
+            "ytd_dest": "CM5:CN123",
+            "a1_replace": True,          # replace month abbr in A1
         },
         {
-            "src"          : "CO - Result",
-            "dest"         : "IM by CO",
-            "month_range"  : "D5:D123",
-            "ytd_range"    : "E5:F123",
-            "ytd_dest"     : "CM5:CN123",
-            "a1_replace"   : True,
+            "src": "CO - Result",
+            "dest": "IM by CO",
+            "month_range": "D5:D123",
+            "ytd_range": "E5:F123",
+            "ytd_dest": "CM5:CN123",
+            "a1_replace": True,
         },
     ],
 }
 
-# ------------------------------------------------------------
-# 3. TRADE
-# ------------------------------------------------------------
+# --- 3. TRADE ---
 TRADE = {
-    "source_file"  : "TradeT_C.xlsx",
-    "dest_pattern" : "Trade data by type and year(*).xlsx",
-    "sheets"       : ["DX", "IM", "RX"],
-    "src_sheets"   : ["DX - Result", "IM - Result", "RX - Result"],
-    "header_range" : "C3:AP4",
-    "header_dest"  : "C18",
-    "month_src_lookup": "B18:B29",   # ← NEW: where month numbers 1-12 live in SOURCE
-    "month_lookup" : "B259:B270",    # destination still uses month abbreviations
-    "hide_row"     : 18,
+    "source_file": "TradeT_C.xlsx",
+    "dest_pattern": "Trade data by type and year(*).xlsx",
+    "sheets": ["DX", "IM", "RX"],
+    "src_sheets": ["DX - Result", "IM - Result", "RX - Result"],
+    "header_range": "C3:AP4",
+    "header_dest": "C18",
+    "month_src_lookup": "B18:B29",   # month numbers 1-12 in SOURCE
+    "month_lookup": "B259:B270",     # destination still uses month abbreviations
+    "hide_row": 18,
 }
-# ------------------------------------------------------------
-# 4. VOLUME
-# ------------------------------------------------------------
+
+# --- 4. VOLUME ---
 VOLUME = {
-    "source_file"  : "VolumeT.xlsx",
-    "dest_pattern" : "Volume and unit values of recyclables(*).xlsx",
+    "source_file": "VolumeT.xlsx",
+    "dest_pattern": "Volume and unit values of recyclables(*).xlsx",
     "jobs": [
         # (src_sheet, src_range, dest_sheet, dest_range)
         ("DX - Result", "D5:I54", "DX", "AI5:AN54"),
@@ -99,22 +104,18 @@ VOLUME = {
     ],
 }
 
-# ============================================================
-#  SHARED HELPERS
-# ============================================================
-import re
-import glob
-import win32com.client as win32
-
-xlPasteValues  = -4163
+# Excel PasteSpecial / Find constants (win32com)
+xlPasteValues = -4163
 xlPasteFormats = -4122
-xlValues       = -4163
+xlValues = -4163
 
-import pythoncom
-import gc
+
+# ============================================================
+# SHARED HELPERS
+# ============================================================
 
 def get_excel():
-    # Kill any leftover Excel processes first (optional but very effective)
+    # Kill leftover Excel processes so COM attach is clean on Windows.
     try:
         os.system('taskkill /F /IM EXCEL.EXE >nul 2>&1')
     except:
@@ -127,6 +128,22 @@ def get_excel():
     excel.ScreenUpdating = False
     excel.EnableEvents = False
     return excel
+
+
+def close_workbooks_and_quit(excel, wb_src, wb_dest):
+    """Restore Excel flags, close workbooks, quit — same sequence as each pipeline finally."""
+    excel.ScreenUpdating = True
+    excel.EnableEvents = True
+    try:
+        wb_src.Close(False)
+    except:
+        pass
+    try:
+        wb_dest.Close(False)
+    except:
+        pass
+    excel.Quit()
+
 
 def find_dest_file(pattern, is_regex=False):
     if is_regex:
@@ -143,6 +160,7 @@ def find_dest_file(pattern, is_regex=False):
         m = re.search(r"\((\d{6})\)", os.path.basename(path))
         yyyymm = m.group(1) if m else None
         return path, yyyymm
+
 
 def paste_values_skip_formulas(ws_src, src_addr, ws_dest, dest_start):
     """Paste values, skipping any destination cell that already has a formula."""
@@ -163,6 +181,7 @@ def paste_values_skip_formulas(ws_src, src_addr, ws_dest, dest_start):
             else:
                 cell.Value = vals[r][c] if vals else None
 
+
 def get_next_month_info(yyyymm):
     d = datetime.strptime(yyyymm, "%Y%m")
     nxt = d + relativedelta(months=1)
@@ -174,9 +193,11 @@ def get_next_month_info(yyyymm):
         "target_text": f"{nxt.strftime('%b')} {nxt.strftime('%Y')}",
     }
 
+
 # ============================================================
-#  1. EXPORT
+# 1. EXPORT
 # ============================================================
+
 def run_export():
     print("\n========== EXPORT ==========")
     src_path = os.path.join(BASE_DIR, EXPORT["source_file"])
@@ -186,14 +207,16 @@ def run_export():
     print(f"Dest   : {dest_path}  ({info['search_str']})")
 
     excel = get_excel()
+    wb_src = wb_dest = None
     try:
-        wb_src  = excel.Workbooks.Open(src_path, UpdateLinks=False, ReadOnly=True)
+        wb_src = excel.Workbooks.Open(src_path, UpdateLinks=False, ReadOnly=True)
         wb_dest = excel.Workbooks.Open(dest_path, UpdateLinks=False)
         print("Sheets in dest:", [sh.Name for sh in wb_dest.Sheets])
+
         # ---- normal sheets (DX / RX / DXRX) ----
         for dest_name, cfg in EXPORT["sheets"].items():
             print(f"\n--- {cfg['src_sheet']} → {dest_name} ---")
-            ws_src  = wb_src.Sheets(cfg["src_sheet"])
+            ws_src = wb_src.Sheets(cfg["src_sheet"])
             ws_dest = wb_dest.Sheets(dest_name)
 
             # dynamic month column (Row 4 logic)
@@ -208,10 +231,14 @@ def run_export():
 
             # format brush from left column
             last_row = 93
-            fmt_src = ws_dest.Range(ws_dest.Cells(5, found.Column),
-                                    ws_dest.Cells(last_row, found.Column))
-            fmt_dst = ws_dest.Range(ws_dest.Cells(5, target_col),
-                                    ws_dest.Cells(last_row, target_col))
+            fmt_src = ws_dest.Range(
+                ws_dest.Cells(5, found.Column),
+                ws_dest.Cells(last_row, found.Column),
+            )
+            fmt_dst = ws_dest.Range(
+                ws_dest.Cells(5, target_col),
+                ws_dest.Cells(last_row, target_col),
+            )
             fmt_src.Copy()
             fmt_dst.PasteSpecial(Paste=xlPasteFormats)
             excel.CutCopyMode = False
@@ -233,9 +260,10 @@ def run_export():
         tcfg = EXPORT["top10"]
         ws_src = wb_src.Sheets(tcfg["src_sheet"])
 
-        # collect candidates
-        candidates = [sh for sh in wb_dest.Sheets
-                    if re.search(tcfg["dest_name_pattern"], sh.Name)]
+        candidates = [
+            sh for sh in wb_dest.Sheets
+            if re.search(tcfg["dest_name_pattern"], sh.Name)
+        ]
 
         has_curr = any(info["curr_abbr"] in sh.Name for sh in candidates)
         has_next = any(info["next_abbr"] in sh.Name for sh in candidates)
@@ -247,7 +275,7 @@ def run_export():
             print("This destination file has already been updated.")
             print("Please restore it from backup before running again.")
             print("Stopping EXPORT.")
-            return False          # ← important
+            return False
 
         # normal first-run: prefer sheet that still has current month
         ws_top = None
@@ -264,12 +292,20 @@ def run_export():
                     break
 
         if not ws_top:
-            raise ValueError(f"Top-10 sheet not found. Candidates: {[s.Name for s in candidates]}")
+            raise ValueError(
+                f"Top-10 sheet not found. Candidates: {[s.Name for s in candidates]}"
+            )
 
         # filter logic (same as original)
         source_vals = ws_src.Range(tcfg["src_range"]).Value
         filtered = []
-        section_headers = ["ferrous metals", "non-ferrous metals", "total metals", "plastics", "paper"]
+        section_headers = [
+            "ferrous metals",
+            "non-ferrous metals",
+            "total metals",
+            "plastics",
+            "paper",
+        ]
         current_cat = ""
         for row in source_vals:
             col_a = str(row[0] or "").strip().lower()
@@ -286,8 +322,14 @@ def run_export():
             except:
                 pass
 
-            skip = (col_b.lower() == "usa" and is_zero) or \
-                   (current_cat == "paper" and col_b.lower() == "other economies" and is_zero)
+            skip = (
+                (col_b.lower() == "usa" and is_zero)
+                or (
+                    current_cat == "paper"
+                    and col_b.lower() == "other economies"
+                    and is_zero
+                )
+            )
             if not skip:
                 filtered.append([row[1], row[2]])
 
@@ -301,8 +343,13 @@ def run_export():
         excel.CutCopyMode = False
 
         # replace month text + rename sheet
-        ws_top.UsedRange.Replace(What=info["curr_abbr"], Replacement=info["next_abbr"],
-                                 LookAt=2, SearchOrder=1, MatchCase=True)
+        ws_top.UsedRange.Replace(
+            What=info["curr_abbr"],
+            Replacement=info["next_abbr"],
+            LookAt=2,
+            SearchOrder=1,
+            MatchCase=True,
+        )
         new_name = f"DXRX - {info['next_abbr']} {info['next_year']} (top 10)"
         ws_top.Name = new_name
         print(f"  Top-10 updated and renamed to '{new_name}'")
@@ -310,19 +357,15 @@ def run_export():
         wb_dest.Save()
         print("\nEXPORT finished successfully.")
         print("\nEXPORT finished successfully.")
-        return True               # ← add this
+        return True
     finally:
-        excel.ScreenUpdating = True
-        excel.EnableEvents = True
-        try: wb_src.Close(False)
-        except: pass
-        try: wb_dest.Close(False)
-        except: pass
-        excel.Quit()
+        close_workbooks_and_quit(excel, wb_src, wb_dest)
+
 
 # ============================================================
-#  2. IMPORT
+# 2. IMPORT
 # ============================================================
+
 def run_import():
     print("\n========== IMPORT ==========")
     src_path = os.path.join(BASE_DIR, IMPORT["source_file"])
@@ -332,13 +375,14 @@ def run_import():
     print(f"Dest   : {dest_path}")
 
     excel = get_excel()
+    wb_src = wb_dest = None
     try:
-        wb_src  = excel.Workbooks.Open(src_path, UpdateLinks=False, ReadOnly=True)
+        wb_src = excel.Workbooks.Open(src_path, UpdateLinks=False, ReadOnly=True)
         wb_dest = excel.Workbooks.Open(dest_path, UpdateLinks=False)
 
         for job in IMPORT["sheets"]:
             print(f"\n--- {job['src']} → {job['dest']} ---")
-            ws_src  = wb_src.Sheets(job["src"])
+            ws_src = wb_src.Sheets(job["src"])
             ws_dest = wb_dest.Sheets(job["dest"])
 
             # A1 month replace
@@ -357,14 +401,18 @@ def run_import():
 
             # month values + format from left
             src_m = ws_src.Range(job["month_range"])
-            dst_m = ws_dest.Range(ws_dest.Cells(5, target_col),
-                                  ws_dest.Cells(123, target_col))
+            dst_m = ws_dest.Range(
+                ws_dest.Cells(5, target_col),
+                ws_dest.Cells(123, target_col),
+            )
             src_m.Copy()
             dst_m.PasteSpecial(Paste=xlPasteValues)
             excel.CutCopyMode = False
 
-            fmt = ws_dest.Range(ws_dest.Cells(5, found.Column),
-                                ws_dest.Cells(123, found.Column))
+            fmt = ws_dest.Range(
+                ws_dest.Cells(5, found.Column),
+                ws_dest.Cells(123, found.Column),
+            )
             fmt.Copy()
             dst_m.PasteSpecial(Paste=xlPasteFormats)
             excel.CutCopyMode = False
@@ -378,17 +426,13 @@ def run_import():
         wb_dest.Save()
         print("\nIMPORT finished successfully.")
     finally:
-        excel.ScreenUpdating = True
-        excel.EnableEvents = True
-        try: wb_src.Close(False)
-        except: pass
-        try: wb_dest.Close(False)
-        except: pass
-        excel.Quit()
+        close_workbooks_and_quit(excel, wb_src, wb_dest)
+
 
 # ============================================================
-#  3. TRADE
+# 3. TRADE
 # ============================================================
+
 def run_trade():
     print("\n========== TRADE ==========")
     src_path = os.path.join(BASE_DIR, TRADE["source_file"])
@@ -398,22 +442,26 @@ def run_trade():
     print(f"Dest   : {dest_path}  (paste into {info['next_abbr']})")
 
     excel = get_excel()
+    wb_src = wb_dest = None
     try:
-        wb_src  = excel.Workbooks.Open(src_path, UpdateLinks=False, ReadOnly=True)
+        wb_src = excel.Workbooks.Open(src_path, UpdateLinks=False, ReadOnly=True)
         wb_dest = excel.Workbooks.Open(dest_path, UpdateLinks=False)
 
         for src_name, dest_name in zip(TRADE["src_sheets"], TRADE["sheets"]):
             print(f"\n--- {src_name} → {dest_name} ---")
-            ws_src  = wb_src.Sheets(src_name)
+            ws_src = wb_src.Sheets(src_name)
             ws_dest = wb_dest.Sheets(dest_name)
 
             # 1) header rows (skip formulas)
             print("  Pasting header rows (skip formulas)...")
-            paste_values_skip_formulas(ws_src, TRADE["header_range"],
-                                    ws_dest, TRADE["header_dest"])
+            paste_values_skip_formulas(
+                ws_src, TRADE["header_range"], ws_dest, TRADE["header_dest"]
+            )
 
             # 2) find SOURCE row for the NEXT month
-            next_month_num = (datetime.strptime(yyyymm, "%Y%m") + relativedelta(months=1)).month
+            next_month_num = (
+                datetime.strptime(yyyymm, "%Y%m") + relativedelta(months=1)
+            ).month
 
             src_month_cell = None
             for cell in ws_src.Range(TRADE["month_src_lookup"]):
@@ -425,11 +473,17 @@ def run_trade():
                     continue
 
             if not src_month_cell:
-                raise ValueError(f"Month number {next_month_num} not found in source {TRADE['month_src_lookup']}")
+                raise ValueError(
+                    f"Month number {next_month_num} not found in source "
+                    f"{TRADE['month_src_lookup']}"
+                )
 
             src_row = src_month_cell.Row
             month_src_range = f"C{src_row}:AP{src_row}"
-            print(f"  Source month {next_month_num} found at row {src_row} → {month_src_range}")
+            print(
+                f"  Source month {next_month_num} found at row {src_row} "
+                f"→ {month_src_range}"
+            )
 
             # 3) locate destination paste row
             month_cell = None
@@ -439,12 +493,18 @@ def run_trade():
                     month_cell = cell
                     break
             if not month_cell:
-                raise ValueError(f"'{info['curr_abbr']}' not found in {TRADE['month_lookup']}")
+                raise ValueError(
+                    f"'{info['curr_abbr']}' not found in {TRADE['month_lookup']}"
+                )
             target_row = month_cell.Row + 1
-            print(f"  Found {info['curr_abbr']} at B{month_cell.Row} → paste to row {target_row} ({info['next_abbr']})")
+            print(
+                f"  Found {info['curr_abbr']} at B{month_cell.Row} "
+                f"→ paste to row {target_row} ({info['next_abbr']})"
+            )
 
-            paste_values_skip_formulas(ws_src, month_src_range,
-                                    ws_dest, f"C{target_row}")
+            paste_values_skip_formulas(
+                ws_src, month_src_range, ws_dest, f"C{target_row}"
+            )
 
             # 4) hide row
             ws_dest.Rows(TRADE["hide_row"]).Hidden = True
@@ -453,17 +513,13 @@ def run_trade():
         wb_dest.Save()
         print("\nTRADE finished successfully.")
     finally:
-        excel.ScreenUpdating = True
-        excel.EnableEvents = True
-        try: wb_src.Close(False)
-        except: pass
-        try: wb_dest.Close(False)
-        except: pass
-        excel.Quit()
+        close_workbooks_and_quit(excel, wb_src, wb_dest)
+
 
 # ============================================================
-#  4. VOLUME
+# 4. VOLUME
 # ============================================================
+
 def run_volume():
     print("\n========== VOLUME ==========")
     src_path = os.path.join(BASE_DIR, VOLUME["source_file"])
@@ -473,18 +529,18 @@ def run_volume():
     print(f"Dest   : {dest_path}")
 
     excel = get_excel()
+    wb_src = wb_dest = None
     try:
-        wb_src  = excel.Workbooks.Open(src_path, UpdateLinks=False, ReadOnly=True)
+        wb_src = excel.Workbooks.Open(src_path, UpdateLinks=False, ReadOnly=True)
         wb_dest = excel.Workbooks.Open(dest_path, UpdateLinks=False)
-
 
         for src_sheet, src_rng, dest_sheet, dest_rng in VOLUME["jobs"]:
             print(f"\n--- {src_sheet} → {dest_sheet} ---")
             print(f"  {src_rng} → {dest_rng}")
-            ws_src  = wb_src.Sheets(src_sheet)
+            ws_src = wb_src.Sheets(src_sheet)
             ws_dest = wb_dest.Sheets(dest_sheet)
 
-            # Update cell A1 month for volumn
+            # Update cell A1 month for volume
             old = str(ws_dest.Range("A1").Value or "")
             new = old.replace(info["curr_abbr"], info["next_abbr"])
             if old != new:
@@ -492,7 +548,6 @@ def run_volume():
                 print(f"  A1: '{old}' → '{new}'")
             else:
                 print(f"  A1 unchanged: '{old}'")
-
 
             ws_src.Range(src_rng).Copy()
             ws_dest.Range(dest_rng).PasteSpecial(Paste=xlPasteValues)
@@ -502,21 +557,19 @@ def run_volume():
         wb_dest.Save()
         print("\nVOLUME finished successfully.")
     finally:
-        excel.ScreenUpdating = True
-        excel.EnableEvents = True
-        try: wb_src.Close(False)
-        except: pass
-        try: wb_dest.Close(False)
-        except: pass
-        excel.Quit()
+        close_workbooks_and_quit(excel, wb_src, wb_dest)
 
+
+# ============================================================
+# RENAME DESTINATION FILES
+# ============================================================
 
 def rename_all_dest_files():
     print("\n========== RENAME DESTINATION FILES ==========")
     jobs = [
         (EXPORT["dest_pattern"], True),    # regex
         (IMPORT["dest_pattern"], False),
-        (TRADE["dest_pattern"],  False),
+        (TRADE["dest_pattern"], False),
         (VOLUME["dest_pattern"], False),
     ]
     for pattern, is_regex in jobs:
@@ -545,19 +598,25 @@ def rename_all_dest_files():
         except Exception as e:
             print(f"  Error: {pattern} → {e}")
 
+
 # ============================================================
-#  RUN EVERYTHING (or call individually)
+# MAIN
 # ============================================================
 
-
-if __name__ == "__main__":
+def main():
     export_ok = run_export()
 
     if export_ok is False:
-        print("\nProgram stopped because of re-run detection. No further steps, no rename.")
+        print(
+            "\nProgram stopped because of re-run detection. "
+            "No further steps, no rename."
+        )
     else:
         run_import()
         run_trade()
         run_volume()
         rename_all_dest_files()
-        pass
+
+
+if __name__ == "__main__":
+    main()
